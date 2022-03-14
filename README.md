@@ -1,2 +1,5 @@
 # ClassBot
-A Mirai plugin that works for remote learning
+服务于居家学习的Mirai插件
+## 功能 & 计划
+- [x] 签到
+  - [ ] 定时生成未签到人员名单
