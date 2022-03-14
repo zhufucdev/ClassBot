@@ -3,6 +3,7 @@ package com.zhufucdev
 import com.zhufucdev.data.Database
 import com.zhufucdev.data.Database.isOp
 import com.zhufucdev.data.SignUpRecord
+import com.zhufucdev.serialization.defaultZone
 import net.mamoe.mirai.Bot
 import net.mamoe.mirai.console.command.CommandSender
 import net.mamoe.mirai.console.command.CompositeCommand
@@ -102,21 +103,16 @@ object GlobalCommand : CompositeCommand(
         if (!isOp(group)) {
             return
         }
-        val records = Database[group]
         val classmates = Database.getClassmates(group)
         sendMessage(
             "今日未签到者: ${
                 buildString {
-                    classmates.subtract(records.filter {
-                        it is SignUpRecord && LocalDateTime.ofInstant(
-                            it.timestamp,
-                            ZoneId.systemDefault()
-                        ).toLocalDate().isEqual(LocalDateTime.now().toLocalDate())
-                    }.map { it.classmate }.toSet())
-                        .forEach {
-                            append(group.getMember(it)?.nameCardOrNick ?: it)
+                    classmates.forEach { id ->
+                        if (!SignUpRecord.hasSignedToday(id, group)) {
+                            append(group.getMember(id)?.nameCardOrNick ?: id)
                             append(", ")
                         }
+                    }
                     if (isNotEmpty()) {
                         delete(length - 2, length)
                     } else {
@@ -130,5 +126,11 @@ object GlobalCommand : CompositeCommand(
     @SubCommand
     suspend fun MemberCommandSender.signup() {
         signup(group)
+    }
+
+    @SubCommand
+    suspend fun MemberCommandSender.sign(member: Member) {
+        Database.record(member.group, SignUpRecord(member.id, Instant.now()))
+        sendMessage("将${member.nameCard}标记为已签")
     }
 }

@@ -9,6 +9,8 @@ import com.zhufucdev.serialization.gson
 import net.mamoe.mirai.console.command.CommandSender
 import net.mamoe.mirai.console.command.ConsoleCommandSender
 import net.mamoe.mirai.console.command.MemberCommandSender
+import net.mamoe.mirai.console.permission.Permission
+import net.mamoe.mirai.console.permission.PermissionService.Companion.hasPermission
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.contact.Member
 
@@ -97,6 +99,8 @@ object Database {
 
     operator fun get(group: Group): List<Record> = records[group.id] ?: arrayListOf()
 
+    fun classes() = records.keys
+
     fun record(group: Group, instance: Record) {
         val r = records[group.id] ?: arrayListOf<Record>().also { records[group.id] = it }
         r.add(instance)
@@ -138,7 +142,7 @@ object Database {
     fun getClassmates(group: Group) = getConfiguration(group).classmates as List<Long>
 
     fun CommandSender.isOp(group: Group? = null): Boolean {
-        return this is ConsoleCommandSender
+        return this.hasPermission(Plugin.parentPermission)
                 || (group == null && this is MemberCommandSender && configurations[this.group.id]?.admins?.contains(user.id) == true)
                 || (group != null && configurations[group.id]?.admins?.contains(user!!.id) == true)
     }
