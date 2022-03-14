@@ -124,6 +124,17 @@ object Database {
         isConfigurationsChanged = true
     }
 
+    fun removeClassmates(list: List<Member>) {
+        if (list.isEmpty()) {
+            return
+        }
+        val config = getConfiguration(list.first().group)
+        list.forEach {
+            config.classmates.remove(it.id)
+        }
+        isConfigurationsChanged = true
+    }
+
     fun getClassmates(group: Group) = getConfiguration(group).classmates as List<Long>
 
     fun CommandSender.isOp(group: Group? = null): Boolean {

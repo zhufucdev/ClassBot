@@ -9,6 +9,9 @@ import net.mamoe.mirai.console.command.CompositeCommand
 import net.mamoe.mirai.console.command.MemberCommandSender
 import net.mamoe.mirai.console.command.getGroupOrNull
 import net.mamoe.mirai.contact.*
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 object GlobalCommand : CompositeCommand(
     Plugin, "class",
@@ -27,6 +30,7 @@ object GlobalCommand : CompositeCommand(
     @SubCommand
     suspend fun CommandSender.classmate(str: String) {
         val targets = arrayListOf<Member>()
+        val removal = arrayListOf<Member>()
         var split = str.split(',').map { it.trim() }
         val basement: Group = getGroupOrNull() ?: split.first().split('.')
             .let {
@@ -61,7 +65,8 @@ object GlobalCommand : CompositeCommand(
                 targets.addAll(basement.members)
             } else {
                 fun getMember(id: Long?) = if (id == null) {
-                    basement.members.firstOrNull { it.nameCardOrNick == t.removePrefix("@") }
+                    val name = t.removePrefix("!").removePrefix("@")
+                    basement.members.firstOrNull { (it.nameCard.isNotEmpty() && it.nameCard == name) || it.nick == name }
                 } else {
                     basement.getMember(id)
                 }
@@ -72,14 +77,24 @@ object GlobalCommand : CompositeCommand(
                 } else {
                     // exclude mode
                     val id = t.removePrefix("!").toLongOrNull()
-                    targets.remove(getMember(id) ?: return@forEach)
+                    val member = getMember(id) ?: return@forEach
+                    val removed = targets.remove(member)
+                    if (!removed) {
+                        removal.add(member)
+                    }
                 }
             }
         }
 
-        Database.markAsClassmates(targets)
+        if (targets.isNotEmpty()) {
+            Database.markAsClassmates(targets)
+            sendMessage("向群中新增了${targets.size}个学员")
+        }
+        if (removal.isNotEmpty()) {
+            Database.removeClassmates(removal)
+            sendMessage("从群中移除了${removal.size}个学员")
+        }
         Database.sync()
-        sendMessage("向群中新增了${targets.size}个学员")
     }
 
     @SubCommand
@@ -89,18 +104,27 @@ object GlobalCommand : CompositeCommand(
         }
         val records = Database[group]
         val classmates = Database.getClassmates(group)
-        sendMessage("今日未签到者: ${buildString {
-            classmates.subtract(records.filterIsInstance<SignUpRecord>().map { it.classmate }.toSet())
-                .forEach { 
-                    append(group.getMember(it)?.nameCardOrNick ?: it)
-                    append(", ")
+        sendMessage(
+            "今日未签到者: ${
+                buildString {
+                    classmates.subtract(records.filter {
+                        it is SignUpRecord && LocalDateTime.ofInstant(
+                            it.timestamp,
+                            ZoneId.systemDefault()
+                        ).toLocalDate().isEqual(LocalDateTime.now().toLocalDate())
+                    }.map { it.classmate }.toSet())
+                        .forEach {
+                            append(group.getMember(it)?.nameCardOrNick ?: it)
+                            append(", ")
+                        }
+                    if (isNotEmpty()) {
+                        delete(length - 2, length)
+                    } else {
+                        append("无")
+                    }
                 }
-            if (isNotEmpty()) {
-                delete(length - 2, length)
-            } else {
-                append("无")
-            }
-        }}")
+            }"
+        )
     }
 
     @SubCommand
