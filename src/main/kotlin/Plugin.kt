@@ -46,10 +46,7 @@ object Plugin : KotlinPlugin(
 
                 val instant = Instant.ofEpochSecond(time.toLong())
                 Database.record(group, SignUpRecord(sender.id, instant))
-                group.sendMessage(buildMessageChain {
-                    add(QuoteReply(message))
-                    add("标记在${dateFormat.format(instant)}签到")
-                })
+                sender.sendMessage("已标记${dateFormat.format(instant)}的签到")
             }
         }
     }
