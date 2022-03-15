@@ -22,7 +22,7 @@
 ```
 或者先授予用户Mirai机制下的权限，再设定操作员
 ```
-# perm grant <User ID>
+# perm grant <User ID> com.zhufucdev.plugin:*
 $ /class op <Member>
 ```
 ### 学员管理
