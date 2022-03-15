@@ -47,10 +47,22 @@ class Query(str: String, group: Group?) {
         split.forEach { t ->
             if (t == "*") {
                 targets.addAll(basement.members)
+            } else if (t == "!*") {
+                // exclude all
+                targets.clear()
+                removal.addAll(basement.members)
             } else {
                 fun getMember(id: Long?) = if (id == null) {
                     val name = t.removePrefix("!").removePrefix("@")
-                    basement.members.firstOrNull { (it.nameCard.isNotEmpty() && it.nameCard == name) || it.nick == name }
+                    if (name.startsWith(MIRAI_CODE_AT_PREFIX)) {
+                        val id1 = name.removePrefix(MIRAI_CODE_AT_PREFIX).removeSuffix("]").toLongOrNull()
+                        if (id1 == null)
+                            null
+                        else
+                            basement.members.firstOrNull { it.id == id1 }
+                    } else {
+                        basement.members.firstOrNull { (it.nameCard.isNotEmpty() && it.nameCard == name) || it.nick == name }
+                    }
                 } else {
                     basement.getMember(id)
                 }
@@ -115,6 +127,8 @@ class Query(str: String, group: Group?) {
                 sendMessage("在所有在线机器人的联系人中找不到群${g.groupID}")
             }
         }
+
+        private const val MIRAI_CODE_AT_PREFIX = "[mirai:at"
     }
 }
 
@@ -163,7 +177,7 @@ object GlobalCommand : CompositeCommand(
             "今日未签到者: ${
                 buildNames(
                     classmates,
-                    include = { SignUpRecord.hasSignedToday(it, group) },
+                    include = { !SignUpRecord.hasSignedToday(it, group) },
                     nameGetter = { group.getMember(it)?.nameCardOrNick ?: it.toString() })
 
             }"
@@ -176,7 +190,7 @@ object GlobalCommand : CompositeCommand(
     }
 
     @SubCommand
-    suspend fun MemberCommandSender.sign(selector: String) {
+    suspend fun CommandSender.sign(selector: String) {
         tryQuery(selector) {
             if (targets.isNotEmpty()) {
                 sendMessage(
