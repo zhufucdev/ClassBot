@@ -107,12 +107,34 @@ object Database {
         isRecordsChanged = true
     }
 
+    fun unrecord(group: Group, filter: (Record) -> Boolean): Boolean {
+        val r = records[group.id] ?: return false
+        return r.removeIf(filter).also { if (it) isRecordsChanged = true }
+    }
+
     private fun getConfiguration(group: Group) =
         configurations[group.id] ?: Configuration().also { configurations[group.id] = it }
 
-    fun markAsAdmin(target: Member) {
-        getConfiguration(target.group).admins.add(target.id)
-        isConfigurationsChanged = true
+    fun markAsAdmin(target: Member): Boolean {
+        val admins = getConfiguration(target.group).admins
+        return if (!admins.contains(target.id)) {
+            admins.add(target.id)
+            isConfigurationsChanged = true
+            true
+        } else {
+            false
+        }
+    }
+
+    fun undoAdmin(target: Member): Boolean {
+        val admins = getConfiguration(target.group).admins
+        return if (admins.contains(target.id)) {
+            admins.remove(target.id)
+            isConfigurationsChanged = true
+            true
+        } else {
+            false
+        }
     }
 
     fun markAsClassmates(list: List<Member>) {

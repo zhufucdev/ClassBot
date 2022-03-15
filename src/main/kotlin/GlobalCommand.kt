@@ -1,9 +1,10 @@
 package com.zhufucdev
 
+import com.zhufucdev.Query.Companion.buildNames
+import com.zhufucdev.Query.Companion.tryQuery
 import com.zhufucdev.data.Database
 import com.zhufucdev.data.Database.isOp
 import com.zhufucdev.data.SignUpRecord
-import com.zhufucdev.serialization.defaultZone
 import net.mamoe.mirai.Bot
 import net.mamoe.mirai.console.command.CommandSender
 import net.mamoe.mirai.console.command.CompositeCommand
@@ -11,41 +12,28 @@ import net.mamoe.mirai.console.command.MemberCommandSender
 import net.mamoe.mirai.console.command.getGroupOrNull
 import net.mamoe.mirai.contact.*
 import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
 
-object GlobalCommand : CompositeCommand(
-    Plugin, "class",
-    description = "ClassBot指令集"
-) {
-    @SubCommand()
-    suspend fun CommandSender.op(target: Member) {
-        if (!isOp(target.group)) {
-            return
-        }
-        Database.markAsAdmin(target)
-        Database.sync()
-        sendMessage("将${target.nick}设置为机器人管理员")
-    }
+typealias MemberDelegate = (Member) -> Boolean
+typealias MemberIdDelegate = (Long) -> Boolean
 
-    @SubCommand
-    suspend fun CommandSender.classmate(str: String) {
-        val targets = arrayListOf<Member>()
-        val removal = arrayListOf<Member>()
+class Query(str: String, group: Group?) {
+    class ContextNotFoundException : Exception()
+    class NoSuchGroupException(val groupID: Long) : Exception()
+
+    val targets = arrayListOf<Member>()
+    val removal = arrayListOf<Member>()
+    val basement: Group
+
+    init {
         var split = str.split(',').map { it.trim() }
-        val basement: Group = getGroupOrNull() ?: split.first().split('.')
+        basement = group ?: split.first().split('.')
             .let {
-                suspend fun reportError() = sendMessage("参数错误: 在非群聊上下文中须指定目标群号，以\".\"为分隔")
+                fun reportError(): Nothing = throw ContextNotFoundException()
 
                 if (it.size != 2) {
                     reportError()
-                    return
                 }
-                val id = it.first().toLongOrNull()
-                if (id == null) {
-                    reportError()
-                    return
-                }
+                val id = it.first().toLongOrNull() ?: reportError()
                 for (bot in Bot.instances) {
                     val index = bot.getGroup(id)
                     if (index != null) {
@@ -53,13 +41,8 @@ object GlobalCommand : CompositeCommand(
                         return@let index
                     }
                 }
-                sendMessage("在所有在线机器人的联系人中找不到群${it.first()}")
-                return
+                throw NoSuchGroupException(id)
             }
-
-        if (!isOp(basement)) {
-            return
-        }
 
         split.forEach { t ->
             if (t == "*") {
@@ -86,16 +69,88 @@ object GlobalCommand : CompositeCommand(
                 }
             }
         }
+    }
 
-        if (targets.isNotEmpty()) {
-            Database.markAsClassmates(targets)
-            sendMessage("向群中新增了${targets.size}个学员")
+    fun buildTargetList(include: MemberDelegate) = buildNames(targets, include)
+    fun buildRemovalList(include: MemberDelegate) = buildNames(removal, include)
+
+    companion object {
+        fun buildNames(idList: List<Long>, include: MemberIdDelegate, nameGetter: (Long) -> String) =
+            buildString {
+                idList.forEach {
+                    if (include(it)) {
+                        append(nameGetter(it))
+                        append(", ")
+                    }
+                }
+                if (isNotEmpty()) {
+                    deleteRange(length - 2, length)
+                } else {
+                    append('无')
+                }
+            }
+
+        fun buildNames(members: List<Member>, include: MemberDelegate) =
+            buildString {
+                members.forEach {
+                    if (include(it)) {
+                        append(it.nameCardOrNick)
+                        append(", ")
+                    }
+                }
+                if (isNotEmpty()) {
+                    deleteRange(length - 2, length)
+                } else {
+                    append('无')
+                }
+            }
+
+        suspend fun CommandSender.tryQuery(selector: String, group: Group? = null, action: suspend Query.() -> Unit) {
+            try {
+                val query = Query(selector, group ?: getGroupOrNull())
+                action(query)
+            } catch (c: ContextNotFoundException) {
+                sendMessage("参数错误: 在非群聊上下文中须指定目标群号，以\".\"为分隔")
+            } catch (g: NoSuchGroupException) {
+                sendMessage("在所有在线机器人的联系人中找不到群${g.groupID}")
+            }
         }
-        if (removal.isNotEmpty()) {
-            Database.removeClassmates(removal)
-            sendMessage("从群中移除了${removal.size}个学员")
+    }
+}
+
+object GlobalCommand : CompositeCommand(
+    Plugin, "class",
+    description = "ClassBot指令集"
+) {
+    @SubCommand
+    suspend fun CommandSender.op(selector: String) {
+        tryQuery(selector) {
+            if (!isOp(basement)) {
+                return@tryQuery
+            }
+            if (targets.isNotEmpty()) {
+                sendMessage("将${buildTargetList { Database.markAsAdmin(it) }}设置为机器人管理员")
+            }
+            if (removal.isNotEmpty()) {
+                sendMessage("取消了${buildRemovalList { Database.undoAdmin(it) }}的管理员权限")
+            }
+            Database.sync()
         }
-        Database.sync()
+    }
+
+    @SubCommand
+    suspend fun CommandSender.classmate(selector: String) {
+        tryQuery(selector) {
+            if (targets.isNotEmpty()) {
+                Database.markAsClassmates(targets)
+                sendMessage("向群中新增了${targets.size}个学员")
+            }
+            if (removal.isNotEmpty()) {
+                Database.removeClassmates(removal)
+                sendMessage("从群中移除了${removal.size}个学员")
+            }
+            Database.sync()
+        }
     }
 
     @SubCommand
@@ -106,19 +161,11 @@ object GlobalCommand : CompositeCommand(
         val classmates = Database.getClassmates(group)
         sendMessage(
             "今日未签到者: ${
-                buildString {
-                    classmates.forEach { id ->
-                        if (!SignUpRecord.hasSignedToday(id, group)) {
-                            append(group.getMember(id)?.nameCardOrNick ?: id)
-                            append(", ")
-                        }
-                    }
-                    if (isNotEmpty()) {
-                        delete(length - 2, length)
-                    } else {
-                        append("无")
-                    }
-                }
+                buildNames(
+                    classmates,
+                    include = { SignUpRecord.hasSignedToday(it, group) },
+                    nameGetter = { group.getMember(it)?.nameCardOrNick ?: it.toString() })
+
             }"
         )
     }
@@ -129,8 +176,30 @@ object GlobalCommand : CompositeCommand(
     }
 
     @SubCommand
-    suspend fun MemberCommandSender.sign(member: Member) {
-        Database.record(member.group, SignUpRecord(member.id, Instant.now()))
-        sendMessage("将${member.nameCard}标记为已签")
+    suspend fun MemberCommandSender.sign(selector: String) {
+        tryQuery(selector) {
+            if (targets.isNotEmpty()) {
+                sendMessage(
+                    "将${
+                        buildTargetList {
+                            Database.record(
+                                basement,
+                                SignUpRecord(it.id, Instant.now())
+                            ); true
+                        }
+                    }标记为已签"
+                )
+            }
+            if (removal.isNotEmpty()) {
+                sendMessage("将${
+                    buildRemovalList { 
+                        Database.unrecord(basement) { r ->
+                            (r is SignUpRecord) && r.classmate == it.id
+                        }
+                    }
+                }标记为未签")
+            }
+            Database.sync()
+        }
     }
 }
