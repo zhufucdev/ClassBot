@@ -7,9 +7,7 @@ import com.google.gson.reflect.TypeToken
 import com.zhufucdev.Plugin
 import com.zhufucdev.serialization.gson
 import net.mamoe.mirai.console.command.CommandSender
-import net.mamoe.mirai.console.command.ConsoleCommandSender
 import net.mamoe.mirai.console.command.MemberCommandSender
-import net.mamoe.mirai.console.permission.Permission
 import net.mamoe.mirai.console.permission.PermissionService.Companion.hasPermission
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.contact.Member
@@ -97,26 +95,32 @@ object Database {
         }
     }
 
-    operator fun get(group: Group): List<Record> = records[group.id] ?: arrayListOf()
+    operator fun get(group: Group): List<Record> = get(group.id)
+
+    operator fun get(groupID: Long): List<Record> = records[groupID]?.toList() ?: arrayListOf()
 
     fun classes() = records.keys
 
-    fun record(group: Group, instance: Record) {
-        val r = records[group.id] ?: arrayListOf<Record>().also { records[group.id] = it }
+    fun record(groupID: Long, instance: Record) {
+        val r = records[groupID] ?: arrayListOf<Record>().also { records[groupID] = it }
         r.add(instance)
         isRecordsChanged = true
     }
 
-    fun unrecord(group: Group, filter: (Record) -> Boolean): Boolean {
-        val r = records[group.id] ?: return false
+    fun record(group: Group, instance: Record) = record(group.id, instance)
+
+    fun unrecord(groupID: Long, filter: (Record) -> Boolean): Boolean {
+        val r = records[groupID] ?: return false
         return r.removeIf(filter).also { if (it) isRecordsChanged = true }
     }
 
-    private fun getConfiguration(group: Group) =
-        configurations[group.id] ?: Configuration().also { configurations[group.id] = it }
+    fun unrecord(group: Group, filter: (Record) -> Boolean): Boolean = unrecord(group.id, filter)
+
+    private fun getConfiguration(groupID: Long) =
+        configurations[groupID] ?: Configuration().also { configurations[groupID] = it }
 
     fun markAsAdmin(target: Member): Boolean {
-        val admins = getConfiguration(target.group).admins
+        val admins = getConfiguration(target.group.id).admins
         return if (!admins.contains(target.id)) {
             admins.add(target.id)
             isConfigurationsChanged = true
@@ -127,7 +131,7 @@ object Database {
     }
 
     fun undoAdmin(target: Member): Boolean {
-        val admins = getConfiguration(target.group).admins
+        val admins = getConfiguration(target.group.id).admins
         return if (admins.contains(target.id)) {
             admins.remove(target.id)
             isConfigurationsChanged = true
@@ -141,7 +145,7 @@ object Database {
         if (list.isEmpty()) {
             return
         }
-        val config = getConfiguration(list.first().group)
+        val config = getConfiguration(list.first().group.id)
         list.forEach {
             if (!config.classmates.contains(it.id)) {
                 config.classmates.add(it.id)
@@ -154,14 +158,16 @@ object Database {
         if (list.isEmpty()) {
             return
         }
-        val config = getConfiguration(list.first().group)
+        val config = getConfiguration(list.first().group.id)
         list.forEach {
             config.classmates.remove(it.id)
         }
         isConfigurationsChanged = true
     }
 
-    fun getClassmates(group: Group) = getConfiguration(group).classmates as List<Long>
+    fun classmates(groupID: Long) = getConfiguration(groupID).classmates.toList()
+
+    fun classmates(group: Group) = Database.classmates(group.id)
 
     fun CommandSender.isOp(group: Group? = null): Boolean {
         return this.hasPermission(Plugin.parentPermission)
