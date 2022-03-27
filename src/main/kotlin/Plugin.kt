@@ -3,6 +3,7 @@ package com.zhufucdev
 import com.zhufucdev.api.HttpServer
 import com.zhufucdev.data.Database
 import com.zhufucdev.data.SignUpRecord
+import com.zhufucdev.data.homework.HomeworkManifest
 import com.zhufucdev.serialization.dateFormat
 import net.mamoe.mirai.Bot
 import net.mamoe.mirai.console.command.CommandManager.INSTANCE.register
@@ -11,6 +12,10 @@ import net.mamoe.mirai.console.plugin.jvm.KotlinPlugin
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.event.GlobalEventChannel
 import net.mamoe.mirai.event.events.GroupAwareMessageEvent
+import net.mamoe.mirai.event.events.MessageEvent
+import net.mamoe.mirai.event.selectMessagesUnit
+import net.mamoe.mirai.message.data.Image
+import net.mamoe.mirai.message.data.PlainText
 import java.time.Instant
 
 object Plugin : KotlinPlugin(
@@ -47,10 +52,24 @@ object Plugin : KotlinPlugin(
 
     private fun homeworkService() {
         HttpServer.init()
+
+        NaturalLanguageProcessing.onContextEnded {
+
+        }
+
+        GlobalEventChannel.subscribeAlways<MessageEvent> {
+            val images = message.filterIsInstance<Image>()
+            val text = message.filterIsInstance<PlainText>()
+            val conversation =
+                NaturalLanguageProcessing.beginContext(sender, if (this is GroupAwareMessageEvent) group else null)
+            text.forEach { conversation.process(it.content) }
+            images.forEach { conversation.process(it) }
+        }
     }
 
     override fun onDisable() {
         Database.sync()
+        HttpServer.stop()
     }
 
     fun getGroup(id: Long): Group? {

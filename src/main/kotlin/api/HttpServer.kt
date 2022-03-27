@@ -29,6 +29,10 @@ object HttpServer {
         Plugin.logger.info("API server running at http://$HOST:$PORT")
     }
 
+    fun stop() {
+        engine.stop(3000, 5000)
+    }
+
     private fun Route.listRoute() {
         route("/classroom") {
             get {
